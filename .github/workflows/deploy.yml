@@ -49,6 +49,7 @@ jobs:
         env:
           CI: true
           PW_BASE_URL: ${{ needs.build_and_deploy.outputs.base_url }}
+          HOME: /root
       - name: Rename blob-reports
         run: for file in blob-report/*; do [ -f "$file" ] && mv "$file" "blob-report/${{ matrix.project }}-$(basename "$file")"; done
       - name: Upload blob report
