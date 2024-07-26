@@ -35,6 +35,7 @@ jobs:
     strategy:
       matrix:
         project: [chromium, webkit, firefox]
+      fail-fast: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,7 +61,7 @@ jobs:
           retention-days: 1
   merge_reports:
     name: Merge Reports
-    if: needs.run_tests.result == 'success'
+    if: needs.run_tests.result == 'success' || needs.run_tests.result == 'failure'
     needs: run_tests
     runs-on: ubuntu-latest
     steps:
