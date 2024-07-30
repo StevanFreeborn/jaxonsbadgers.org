@@ -57,10 +57,14 @@ npm run test:e2e -- --debug
 
 ```sh
 npm run lint
+- or -
+npm run lint:fix
 ```
 
 ### Format with [Prettier](https://prettier.io/)
 
 ```sh
 npm run format
+- or -
+npm run format:fix
 ```
