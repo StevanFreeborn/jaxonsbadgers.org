@@ -1,0 +1,144 @@
+name: Pull Request
+on:
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint code
+        run: npm run lint
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Format code
+        run: npm run format
+  unit_tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Run unit tests
+        run: npm test
+      - name: Upload unit test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: coverage
+  build_and_deploy:
+    name: Build and Deploy
+    needs: [lint, format, unit_tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      base_url: ${{ steps.builddeploy.outputs.static_web_app_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          lfs: false
+      - name: Build And Deploy
+        id: builddeploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_GREEN_MUSHROOM_0A50E5710 }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: 'upload'
+          app_location: '/'
+          api_location: ''
+          output_location: 'dist'
+  e2e_tests:
+    if: needs.build_and_deploy.result == 'success'
+    name: Run Tests - ${{ matrix.project }}
+    needs: build_and_deploy
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.45.1-jammy
+    strategy:
+      matrix:
+        project: [chromium, webkit, firefox]
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Tests
+        run: npx playwright test --project=${{ matrix.project }}
+        env:
+          CI: true
+          PW_BASE_URL: ${{ needs.build_and_deploy.outputs.base_url }}
+          HOME: /root
+      - name: Rename blob-reports
+        run: for file in blob-report/*; do [ -f "$file" ] && mv "$file" "blob-report/${{ matrix.project }}-$(basename "$file")"; done
+      - name: Upload blob report
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-blob-reports-${{ matrix.project }}-${{ strategy.job-index }}
+          path: blob-report
+          retention-days: 1
+  merge_e2e_reports:
+    name: Merge Reports
+    if: needs.e2e_tests.result == 'success' || needs.e2e_tests.result == 'failure'
+    needs: e2e_tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Download blob reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: all-blob-reports-*
+          merge-multiple: true
+          path: all-blob-reports
+      - name: Rename reports
+        run: count=1; for file in $(find ./all-blob-reports -maxdepth 1 -type f -name "*.zip"); do mv "$file" "all-blob-reports/report-$count.zip"; count=$((count+1)); done
+      - name: Merge into HTML Report
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-attempt-${{ github.run_attempt }}
+          path: playwright-report
+          retention-days: 90
